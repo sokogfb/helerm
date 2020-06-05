@@ -25,8 +25,23 @@ class ClassificationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Classification
-        fields = ('id', 'created_at', 'modified_at', 'code', 'title', 'parent', 'description', 'description_internal',
-                  'related_classification', 'additional_information', 'function_allowed')
+        fields = (
+            'id',
+            'created_at',
+            'modified_at',
+            'version',
+            'state',
+            'valid_from',
+            'valid_to',
+            'code',
+            'title',
+            'parent',
+            'description',
+            'description_internal',
+            'related_classification',
+            'additional_information',
+            'function_allowed',
+        )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
