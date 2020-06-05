@@ -88,6 +88,9 @@ class Classification(TimeStampedModel):
 
         super().save(*args, **kwargs)
 
+    def get_modified_by_display(self):
+        return self._modified_by or None
+
 
 @transaction.atomic
 def update_function_allowed(classifications):

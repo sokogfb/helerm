@@ -1808,6 +1808,8 @@ def test_classification_create_requires_permission(user_api_client, user_2_api_c
         classification = Classification.objects.first()
         assert classification.code == data['code']
         assert classification.title == data['title']
+        assert classification.created_by == client.user
+        assert classification.modified_by == client.user
     else:
         assert response.status_code == 403
         assert Classification.objects.count() == 0
@@ -1831,6 +1833,7 @@ def test_classification_update_requires_permission(user_api_client, user_2_api_c
         classification.refresh_from_db()
         assert classification.code == data['code']
         assert classification.title == data['title']
+        assert classification.modified_by == client.user
     else:
         assert response.status_code == 403
         assert Classification.objects.count() == 1

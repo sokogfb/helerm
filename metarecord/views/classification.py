@@ -22,6 +22,7 @@ def include_related(request):
 class ClassificationSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(source='uuid', format='hex', read_only=True)
     parent = HexRelatedField(read_only=True)
+    modified_by = serializers.SerializerMethodField()
 
     class Meta:
         model = Classification
@@ -29,6 +30,7 @@ class ClassificationSerializer(serializers.ModelSerializer):
             'id',
             'created_at',
             'modified_at',
+            'modified_by',
             'version',
             'state',
             'valid_from',
@@ -59,6 +61,14 @@ class ClassificationSerializer(serializers.ModelSerializer):
             fields['phases'] = serializers.SerializerMethodField(method_name='_get_phases')
 
         return fields
+
+    def get_modified_by(self, obj):
+        user = self.context['request'].user
+
+        if user.has_perm(Classification.CAN_VIEW_MODIFIED_BY):
+            return obj.get_modified_by_display()
+
+        return None
 
     def _get_function(self, obj):
         functions = obj.prefetched_functions
@@ -122,6 +132,11 @@ class ClassificationSerializer(serializers.ModelSerializer):
         if not user.has_perm(Classification.CAN_EDIT):
             raise exceptions.PermissionDenied(_('No permission to create.'))
 
+        validated_data.update({
+            'created_by': user,
+            'modified_by': user,
+        })
+
         return super().create(validated_data)
 
 
@@ -131,6 +146,10 @@ class ClassificationSerializer(serializers.ModelSerializer):
 
         if not user.has_perm(Classification.CAN_EDIT):
             raise exceptions.PermissionDenied(_('No permission to update.'))
+
+        validated_data.update({
+            'modified_by': user,
+        })
 
         return super().update(instance, validated_data)
 
