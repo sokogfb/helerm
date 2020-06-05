@@ -8,6 +8,11 @@ from .base import TimeStampedModel
 
 
 class Classification(TimeStampedModel):
+    CAN_EDIT = 'metarecord.can_edit_classification'
+    CAN_REVIEW = 'metarecord.can_review_classification'
+    CAN_APPROVE = 'metarecord.can_approve_classification'
+    CAN_VIEW_MODIFIED_BY = 'metarecord.can_view_classification_modified_by'
+
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, db_index=True)
     parent = models.ForeignKey(
         'self', verbose_name=_('parent'), related_name='children', blank=True, null=True, on_delete=models.SET_NULL
@@ -23,6 +28,12 @@ class Classification(TimeStampedModel):
     class Meta:
         verbose_name = _('classification')
         verbose_name_plural = _('classifications')
+        permissions = (
+            ('can_edit_classification', _('Can edit classification')),
+            ('can_review_classification', _('Can review classification')),
+            ('can_approve_classification', _('Can approve classification')),
+            ('can_view_classification_modified_by', _('Can view classification modified by')),
+        )
 
     def __str__(self):
         return self.code
