@@ -2,10 +2,15 @@ import uuid
 from collections import Iterable
 
 from django.contrib.auth import get_user_model
-from django.db import models, transaction
+from django.db import models, transaction, connection
 from django.utils.translation import ugettext_lazy as _
 
 from .base import TimeStampedModel
+
+
+class ClassificationQuerySet(models.QuerySet):
+    def latest_version(self):
+        return self.order_by('code', '-version').distinct('code')
 
 
 class Classification(TimeStampedModel):
@@ -63,6 +68,8 @@ class Classification(TimeStampedModel):
     additional_information = models.TextField(verbose_name=_('additional information'), blank=True)
     function_allowed = models.BooleanField(verbose_name=_('function allowed'), default=False)
 
+    objects = ClassificationQuerySet.as_manager()
+
     class Meta:
         verbose_name = _('classification')
         verbose_name_plural = _('classifications')
@@ -78,6 +85,17 @@ class Classification(TimeStampedModel):
         return self.code
 
     def save(self, *args, **kwargs):
+        if not self.id:
+            with connection.cursor() as cursor:
+                cursor.execute('LOCK TABLE %s' % self._meta.db_table)
+
+            try:
+                latest = Classification.objects.latest_version().get(code=self.code)
+                self.version = latest.version + 1
+                self.uuid = latest.uuid
+            except Classification.DoesNotExist:
+                self.version = 1
+
         # Only update `_created_by` and `_modified_by` value if the relations
         # are set set. Text values should persist even if related user is deleted.
         if self.created_by:

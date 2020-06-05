@@ -1821,8 +1821,7 @@ def test_classification_update_requires_permission(user_api_client, user_2_api_c
     set_permissions(user_api_client, Classification.CAN_EDIT)
     client = user_api_client if has_permission else user_2_api_client
     data = {
-        'code': '05',
-        'title': 'test classification updated through the API'
+        'state': Classification.SENT_FOR_REVIEW,
     }
 
     response = client.patch(get_classification_detail_url(classification), data=data)
@@ -1831,15 +1830,35 @@ def test_classification_update_requires_permission(user_api_client, user_2_api_c
         assert response.status_code == 200
         assert Classification.objects.count() == 1
         classification.refresh_from_db()
-        assert classification.code == data['code']
-        assert classification.title == data['title']
+        assert classification.state == Classification.SENT_FOR_REVIEW
         assert classification.modified_by == client.user
     else:
         assert response.status_code == 403
         assert Classification.objects.count() == 1
         classification.refresh_from_db()
-        assert classification.code == '00 00'
-        assert classification.title == 'test classification'
+        assert classification.state == Classification.DRAFT
+
+
+@pytest.mark.django_db
+def test_classification_put_creates_new_version(user_api_client, classification):
+    set_permissions(user_api_client, Classification.CAN_EDIT)
+    data = {
+        'code': classification.code,
+        'title': 'Updated classification title',
+        'description': 'Updated classification description',
+    }
+
+    response = user_api_client.put(get_classification_detail_url(classification), data=data)
+
+    assert response.status_code == 200
+    assert response.json()['version'] == 2
+    assert Classification.objects.count() == 2
+    new_version = Classification.objects.latest_version().get(code=classification.code)
+    assert new_version.code == classification.code
+    assert new_version.uuid == classification.uuid
+    assert new_version.version == 2
+    assert new_version.title == data['title']
+    assert new_version.description == data['description']
 
 
 @pytest.mark.django_db

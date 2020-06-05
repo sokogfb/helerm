@@ -125,6 +125,12 @@ class ClassificationSerializer(serializers.ModelSerializer):
 
         return data
 
+    def _create_new_version(self, validated_data):
+        user = self.context['request'].user
+        user_data = {'created_by': user, 'modified_by': user}
+        validated_data.update(user_data)
+        return Classification.objects.create(**validated_data)
+
     @transaction.atomic
     def create(self, validated_data):
         user = self.context['request'].user
@@ -147,11 +153,27 @@ class ClassificationSerializer(serializers.ModelSerializer):
         if not user.has_perm(Classification.CAN_EDIT):
             raise exceptions.PermissionDenied(_('No permission to update.'))
 
-        validated_data.update({
-            'modified_by': user,
-        })
+        if self.partial:
+            allowed_fields = {'state', 'valid_from', 'valid_to'}
+            data = {
+                field: validated_data[field]
+                for field in allowed_fields
+                if field in validated_data
+            }
+            if not data:
+                return instance
+            data['modified_by'] = user
 
-        return super().update(instance, validated_data)
+            # Update only state, valid_from and valid_to fields
+            # and do an actual update instead of a new version
+            return super().update(instance, data)
+
+        if instance.state in (Classification.SENT_FOR_REVIEW, Classification.WAITING_FOR_APPROVAL):
+            raise exceptions.ValidationError(
+                _('Cannot edit while in state "sent_for_review" or "waiting_for_approval"')
+            )
+
+        return self._create_new_version(validated_data)
 
 
 class ClassificationViewSet(viewsets.ModelViewSet):
