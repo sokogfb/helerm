@@ -1,4 +1,7 @@
+from django.core import exceptions
+from django.db import transaction
 from django.db.models import Prefetch
+from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers, viewsets
 
 from metarecord.models import Classification, Function
@@ -29,7 +32,10 @@ class ClassificationSerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
 
         request = self.context['request']
-        self.include_related = include_related(request)
+        self.include_related = False
+
+        if request.method == 'GET':
+            self.include_related = include_related(request)
 
     def get_fields(self):
         fields = super().get_fields()
@@ -83,17 +89,38 @@ class ClassificationSerializer(serializers.ModelSerializer):
 
     def to_representation(self, obj):
         data = super().to_representation(obj)
-        data = self._append_function_fields_to_repr(obj, data)
-
         request = self.context['request']
-        if request and not request.user.is_authenticated:
-            data.pop('description_internal', None)
-            data.pop('additional_information', None)
+
+        if request.method == 'GET':
+            data = self._append_function_fields_to_repr(obj, data)
+
+            if request and not request.user.is_authenticated:
+                data.pop('description_internal', None)
+                data.pop('additional_information', None)
 
         return data
 
+    @transaction.atomic
+    def create(self, validated_data):
+        user = self.context['request'].user
 
-class ClassificationViewSet(viewsets.ReadOnlyModelViewSet):
+        if not user.has_perm(Classification.CAN_EDIT):
+            raise exceptions.PermissionDenied(_('No permission to create.'))
+
+        return super().create(validated_data)
+
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        user = self.context['request'].user
+
+        if not user.has_perm(Classification.CAN_EDIT):
+            raise exceptions.PermissionDenied(_('No permission to update.'))
+
+        return super().update(instance, validated_data)
+
+
+class ClassificationViewSet(viewsets.ModelViewSet):
     queryset = Classification.objects.order_by('code').select_related('parent').prefetch_related('children')
     serializer_class = ClassificationSerializer
     lookup_field = 'uuid'

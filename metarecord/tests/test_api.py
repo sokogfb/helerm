@@ -1790,6 +1790,55 @@ def test_classification_fields_visibility(api_client, user_api_client, classific
         assert 'additional_information' not in response.data
 
 
+@pytest.mark.parametrize('has_permission', (False, True))
+@pytest.mark.django_db
+def test_classification_create_requires_permission(user_api_client, user_2_api_client, has_permission):
+    set_permissions(user_api_client, Classification.CAN_EDIT)
+    client = user_api_client if has_permission else user_2_api_client
+    data = {
+        'code': '05',
+        'title': 'test classification created through the API'
+    }
+
+    response = client.post(CLASSIFICATION_LIST_URL, data=data)
+
+    if has_permission:
+        assert response.status_code == 201
+        assert Classification.objects.count() == 1
+        classification = Classification.objects.first()
+        assert classification.code == data['code']
+        assert classification.title == data['title']
+    else:
+        assert response.status_code == 403
+        assert Classification.objects.count() == 0
+
+
+@pytest.mark.parametrize('has_permission', (False, True))
+@pytest.mark.django_db
+def test_classification_update_requires_permission(user_api_client, user_2_api_client, classification, has_permission):
+    set_permissions(user_api_client, Classification.CAN_EDIT)
+    client = user_api_client if has_permission else user_2_api_client
+    data = {
+        'code': '05',
+        'title': 'test classification updated through the API'
+    }
+
+    response = client.patch(get_classification_detail_url(classification), data=data)
+
+    if has_permission:
+        assert response.status_code == 200
+        assert Classification.objects.count() == 1
+        classification.refresh_from_db()
+        assert classification.code == data['code']
+        assert classification.title == data['title']
+    else:
+        assert response.status_code == 403
+        assert Classification.objects.count() == 1
+        classification.refresh_from_db()
+        assert classification.code == '00 00'
+        assert classification.title == 'test classification'
+
+
 @pytest.mark.django_db
 def test_version_history_modified_by(user_2_api_client, super_user_api_client, function, classification, user):
     set_permissions(user_2_api_client, Function.CAN_EDIT)
