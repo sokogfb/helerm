@@ -5,9 +5,8 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers, viewsets
 
 from metarecord.models import Classification, Function
+from metarecord.views.base import ClassificationRelationSerializer
 from metarecord.views.function import PhaseSerializer
-
-from .base import HexRelatedField
 
 
 def include_related(request):
@@ -21,7 +20,7 @@ def include_related(request):
 
 class ClassificationSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(source='uuid', format='hex', read_only=True)
-    parent = HexRelatedField(read_only=True)
+    parent = ClassificationRelationSerializer(required=False)
     modified_by = serializers.SerializerMethodField()
 
     class Meta:
@@ -144,7 +143,6 @@ class ClassificationSerializer(serializers.ModelSerializer):
         })
 
         return super().create(validated_data)
-
 
     @transaction.atomic
     def update(self, instance, validated_data):

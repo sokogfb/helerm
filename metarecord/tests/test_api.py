@@ -45,7 +45,10 @@ def get_bulk_update_approve_url(bulk_update):
 @pytest.fixture
 def post_function_data(classification, free_text_attribute, choice_attribute):
     return {
-        'classification': str(classification.uuid),
+        'classification': {
+            'id': classification.uuid.hex,
+            'version': classification.version,
+        },
         'attributes': {
             free_text_attribute.identifier: 'new function attribute value',
         },
@@ -248,9 +251,30 @@ def test_function_post(post_function_data, user_api_client):
 
 
 @pytest.mark.django_db
+def test_function_post_with_multiple_classification_versions(post_function_data, classification, user_api_client):
+    set_permissions(user_api_client, Function.CAN_EDIT)
+    classification_v2 = Classification.objects.create(
+        uuid=classification.uuid,
+        title='test classification v2',
+        code=classification.code,
+        function_allowed=classification.function_allowed,
+    )
+
+    post_function_data['classification']['version'] = classification_v2.version
+
+    response = user_api_client.post(FUNCTION_LIST_URL, data=post_function_data)
+
+    assert response.status_code == 201
+    new_function = Function.objects.last()
+    assert new_function.classification == classification_v2
+
+
+@pytest.mark.django_db
 def test_function_post_empty_function(user_api_client, classification):
     set_permissions(user_api_client, Function.CAN_EDIT)
-    response = user_api_client.post(FUNCTION_LIST_URL, data={'classification': str(classification.uuid)})
+    response = user_api_client.post(FUNCTION_LIST_URL, data={
+        'classification': {'id': classification.uuid.hex, 'version': classification.version },
+    })
     assert response.status_code == 201
 
     new_function = Function.objects.last()
@@ -275,7 +299,7 @@ def test_cannot_post_more_than_one_function_for_classification(post_function_dat
 
     response = user_api_client.post(FUNCTION_LIST_URL, data=post_function_data)
     assert response.status_code == 400
-    assert 'Classification %s already has a function.' % post_function_data['classification'] in str(response.data)
+    assert 'Classification %s already has a function.' % post_function_data['classification']['id'] in str(response.data)
 
 
 @pytest.mark.django_db
@@ -298,6 +322,31 @@ def test_function_put(put_function_data, user_api_client, function, phase, actio
     for index, obj in enumerate(models):
         obj.refresh_from_db()
         assert obj.modified_at == modified_ats[index]
+
+
+@pytest.mark.django_db
+def test_function_put_with_new_classification_version(put_function_data, user_api_client, classification, function):
+    set_permissions(user_api_client, Function.CAN_EDIT)
+    classification_v2 = Classification.objects.create(
+        uuid=classification.uuid,
+        title='test classification v2',
+        code=classification.code,
+        function_allowed=classification.function_allowed,
+    )
+    assert function.classification.title == classification.title
+    put_function_data['classification'] = {
+        'id': classification_v2.uuid.hex,
+        'version': classification_v2.version,
+    }
+
+    response = user_api_client.put(get_function_detail_url(function), data=put_function_data)
+    assert response.status_code == 200
+
+    new_function = Function.objects.last()
+    _check_function_object_matches_data(new_function, put_function_data)
+    assert Function.objects.count() == 2
+    assert new_function.uuid == function.uuid
+    assert new_function.classification.title == classification_v2.title
 
 
 @pytest.mark.django_db
@@ -327,7 +376,10 @@ def test_function_put_invalid_attributes(put_function_data, user_api_client, fun
 def test_function_put_not_able_to_change_classification(put_function_data, user_api_client, function, classification,
                                                         classification_2):
     set_permissions(user_api_client, Function.CAN_EDIT)
-    put_function_data['classification'] = str(classification_2.uuid)
+    put_function_data['classification'] = {
+        'id': classification_2.uuid.hex,
+        'version': classification_2.version,
+    }
 
     response = user_api_client.put(get_function_detail_url(function), data=put_function_data)
     assert response.status_code == 200
@@ -1764,13 +1816,16 @@ def test_function_delete_on_approve(user_api_client, classification):
 @pytest.mark.django_db
 def test_function_post_when_not_allowed(post_function_data, user_api_client):
     set_permissions(user_api_client, Function.CAN_EDIT)
-    parent_classification = Classification.objects.get(uuid=post_function_data['classification'])
+    parent_classification = Classification.objects.get(
+        uuid=post_function_data['classification']['id'],
+        version=post_function_data['classification']['version'],
+    )
     parent_classification.function_allowed = False
     parent_classification.save(update_fields=('function_allowed',))
 
     response = user_api_client.post(FUNCTION_LIST_URL, data=post_function_data)
     assert response.status_code == 400
-    expected_error = 'Classification %s does not allow function creation.' % parent_classification.uuid
+    expected_error = 'Classification %s does not allow function creation.' % parent_classification.uuid.hex
     assert expected_error in response.data['non_field_errors']
 
 
@@ -1859,6 +1914,41 @@ def test_classification_put_creates_new_version(user_api_client, classification)
     assert new_version.version == 2
     assert new_version.title == data['title']
     assert new_version.description == data['description']
+
+
+@pytest.mark.parametrize('parent_state', (Classification.APPROVED, Classification.DRAFT))
+@pytest.mark.django_db
+def test_classification_put_parent_version_change(user_api_client, parent_classification, classification, parent_state):
+    set_permissions(user_api_client, Classification.CAN_EDIT)
+    classification.parent = parent_classification
+    classification.save(update_fields=['parent'])
+    parent_classification_v2 = Classification.objects.create(
+        uuid=parent_classification.uuid,
+        title='Updated title',
+        code=parent_classification.code,
+        function_allowed=parent_classification.function_allowed,
+        state=parent_state
+    )
+    assert parent_classification_v2.version == 2
+    assert classification.parent == parent_classification
+
+    data = {
+        'title': 'Some other title',
+        'code': classification.code,
+        'function_allowed': classification.function_allowed,
+        'parent': {
+            'id': classification.parent.uuid.hex,
+            'version': classification.parent.version,
+        }
+    }
+    response = user_api_client.put(get_classification_detail_url(classification), data=data)
+    response_data = response.json()
+
+    assert response.status_code == 200
+    new_version = Classification.objects.latest_version().get(uuid=classification.uuid)
+    assert new_version.version == 2
+    assert new_version.parent == parent_classification_v2
+    assert response_data['parent'] == parent_classification_v2.uuid.hex
 
 
 @pytest.mark.django_db
