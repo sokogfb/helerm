@@ -1952,6 +1952,22 @@ def test_classification_put_parent_version_change(user_api_client, parent_classi
 
 
 @pytest.mark.django_db
+def test_classification_version_filter(user_api_client, classification):
+    classification_v2 = Classification.objects.create(
+        uuid=classification.uuid,
+        title='test classification v2',
+        code=classification.code,
+        function_allowed=classification.function_allowed,
+    )
+    assert classification_v2.version == 2
+
+    response = user_api_client.get(get_classification_detail_url(classification), {'version': 2})
+
+    data = response.json()
+    assert data['title'] == 'test classification v2'
+
+
+@pytest.mark.django_db
 def test_version_history_modified_by(user_2_api_client, super_user_api_client, function, classification, user):
     set_permissions(user_2_api_client, Function.CAN_EDIT)
     Function.objects.create(classification=classification, state=Function.DRAFT, modified_by=user)

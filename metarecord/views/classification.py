@@ -1,6 +1,7 @@
+import django_filters
 from django.core import exceptions
 from django.db import transaction
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers, viewsets
 
@@ -174,9 +175,30 @@ class ClassificationSerializer(serializers.ModelSerializer):
         return self._create_new_version(validated_data)
 
 
+class ClassificationFilterSet(django_filters.FilterSet):
+    valid_at = django_filters.DateFilter(method='filter_valid_at')
+
+    class Meta:
+        model = Classification
+        fields = ('valid_at', 'version')
+
+    def filter_valid_at(self, queryset, name, value):
+        # Classification is considered invalid if neither date is set
+        queryset = queryset.exclude(valid_from__isnull=True, valid_to__isnull=True)
+
+        # Null value means there's no bound to that direction
+        queryset = queryset.filter(
+            (Q(valid_from__isnull=True) | Q(valid_from__lte=value)) &
+            (Q(valid_to__isnull=True) | Q(valid_to__gte=value))
+        )
+        return queryset
+
+
 class ClassificationViewSet(viewsets.ModelViewSet):
     queryset = Classification.objects.order_by('code').select_related('parent').prefetch_related('children')
     serializer_class = ClassificationSerializer
+    filter_backends = (django_filters.rest_framework.DjangoFilterBackend,)
+    filterset_class = ClassificationFilterSet
     lookup_field = 'uuid'
 
     def get_queryset(self):
